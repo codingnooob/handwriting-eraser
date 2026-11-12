@@ -99,7 +99,9 @@ public final class EraserStore: ObservableObject {
             downloadedModelURL = destination
             return destination
         }
-        throw lastError ?? InkRemovalError.modelDidNotReturnAnOutput
+        let attemptedPaths = candidates.map { $0.path }.joined(separator: ", ")
+        let failureMessage = "Local handwriting model load failed for paths: \(attemptedPaths). Error: \(String(describing: lastError))"
+        throw NSError(domain: "HandwritingEraser", code: 1, userInfo: [NSLocalizedDescriptionKey: failureMessage])
     }
 
     @available(macOS 15.0, *)
