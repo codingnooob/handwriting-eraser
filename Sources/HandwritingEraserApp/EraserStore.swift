@@ -69,16 +69,13 @@ public final class EraserStore: ObservableObject {
         try data.write(to: destination)
 
         let compiledURL = try await MLModel.compileModel(at: destination)
-        let downloadedModel: MLModel
-        do {
-            downloadedModel = try MLModel(contentsOf: compiledURL)
-        } catch {
-            // Fall back to loading the source model (MLModel handles compilation).
-            downloadedModel = try MLModel(contentsOf: destination)
-        }
-        self.model = CoreMLHandwritingRemovalModel(model: downloadedModel)
-        downloadedModelURL = destination
-        return destination
+        let compiledData = try Data(contentsOf: compiledURL)
+        let compiledFileURL = destination.appendingPathExtension("mlmodelc")
+        try compiledData.write(to: compiledFileURL)
+        let downloadedModel = CoreMLHandwritingRemovalModel(model: try MLModel(contentsOf: compiledFileURL))
+        self.model = downloadedModel
+        downloadedModelURL = compiledFileURL
+        return compiledFileURL
     }
 
     @available(macOS 15.0, *)
