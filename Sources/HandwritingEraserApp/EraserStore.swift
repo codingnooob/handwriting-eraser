@@ -15,6 +15,8 @@ public final class EraserStore: ObservableObject {
     @Published public var errorMessage: String?
     @Published public var cleanedDocumentURL: URL?
     @Published public var model: HandwritingRemovalModel?
+    @Published public var modelDownloadURLString: String = "https://huggingface.co/apple/ml-handwriting-removal/resolve/main/HandwritingRemover.mlmodel"
+    @Published public var downloadedModelURL: URL?
 
     @Published public var isImporterPresented = false
 
@@ -52,6 +54,23 @@ public final class EraserStore: ObservableObject {
     public func renderPage(_ page: PDFPage) throws -> NSImage {
         let source: NSImage = page.thumbnail(of: CGSize(width: 612, height: 792), for: .mediaBox)
         return source
+    }
+
+    @available(macOS 15.0, *)
+    public func downloadModel(from url: URL) async throws -> URL {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            throw URLError(.badServerResponse)
+        }
+
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let destination = directory.appendingPathComponent("HandwritingRemover-\(Int(Date().timeIntervalSince1970)).mlmodel")
+        try data.write(to: destination)
+
+        let downloadedModel = try CoreMLHandwritingRemovalModel.remover(contentsOf: destination)
+        self.model = downloadedModel
+        downloadedModelURL = destination
+        return destination
     }
 
     @available(macOS 15.0, *)

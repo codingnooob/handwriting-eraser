@@ -30,6 +30,13 @@ struct ContentView: View {
                         }
 
                         Button {
+                            store.isImporterPresented = true
+                        } label: {
+                            Label("Import Another PDF", systemImage: "doc.richtext")
+                        }
+                        .disabled(store.isProcessing)
+
+                        Button {
                             Task { await runClean() }
                         } label: {
                             Label("Remove Handwriting", systemImage: "eraser")
@@ -72,6 +79,27 @@ struct ContentView: View {
                 .font(.title)
             Text("Import a PDF to remove handwritten notes with a fully local AI model.")
                 .foregroundStyle(.secondary)
+            Button("Import PDF") {
+                store.isImporterPresented = true
+            }
+            .disabled(store.isProcessing)
+            Button("Download Local AI Model") {
+                Task { await downloadModel() }
+            }
+            .disabled(store.isProcessing)
+        }
+    }
+
+    private func downloadModel() async {
+        guard let url = URL(string: store.modelDownloadURLString) else {
+            store.errorMessage = "Invalid local model download URL."
+            return
+        }
+        do {
+            let savedModelURL = try await store.downloadModel(from: url)
+            store.errorMessage = "Local AI model downloaded to \(savedModelURL.path)."
+        } catch {
+            store.errorMessage = "Local model download failed: \(error.localizedDescription)"
         }
     }
 

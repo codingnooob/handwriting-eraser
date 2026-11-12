@@ -52,7 +52,9 @@ The app runs a Core ML model locally:
    `python -m coremltools.convert ...`
 2. Add the resulting `.mlmodel` to the app (e.g. as a bundle resource named
    `HandwritingRemover.mlmodel` so it is picked up by
-   `Bundle.main.url(forResource: "HandwritingRemover", withExtension: "mlmodel")`).
+   `Bundle.main.url(forResource: "HandwritingRemover", withExtension: "mlmodel")`,
+   or use the in-app **Download Local AI Model** button to fetch one from the
+   configured `HandwritingRemoverModel.modelDownloadURLString`.
 
 ## Architecture
 
