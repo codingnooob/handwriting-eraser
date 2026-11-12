@@ -15,7 +15,7 @@ public final class EraserStore: ObservableObject {
     @Published public var errorMessage: String?
     @Published public var cleanedDocumentURL: URL?
     @Published public var model: HandwritingRemovalModel?
-    @Published public var modelDownloadURLString: String = "https://huggingface.co/apple/ml-handwriting-removal/resolve/main/HandwritingRemover.mlmodel"
+    @Published public var modelDownloadURLString: String = "https://huggingface.co/mlboydaisuke/LaMa-CoreML/resolve/main/LaMa.mlpackage/Data/com.apple.CoreML/model.mlmodel"
     @Published public var downloadedModelURL: URL?
 
     @Published public var isImporterPresented = false
