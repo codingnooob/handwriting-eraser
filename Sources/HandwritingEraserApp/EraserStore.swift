@@ -3,6 +3,7 @@ import Combine
 import AppKit
 import PDFKit
 import CoreGraphics
+import CoreML
 import HandwritingEraserKit
 
 @MainActor
@@ -67,7 +68,8 @@ public final class EraserStore: ObservableObject {
         let destination = directory.appendingPathComponent("HandwritingRemover-\(Int(Date().timeIntervalSince1970)).mlmodel")
         try data.write(to: destination)
 
-        let downloadedModel = try CoreMLHandwritingRemovalModel.remover(contentsOf: destination)
+        let compiledURL = try await MLModel.compileModel(at: destination)
+        let downloadedModel = CoreMLHandwritingRemovalModel(model: try MLModel(contentsOf: compiledURL))
         self.model = downloadedModel
         downloadedModelURL = destination
         return destination
