@@ -76,17 +76,30 @@ public final class EraserStore: ObservableObject {
         // Next attempt: load the model directly from the Hugging Face resolved
         // artifact URL instead of going through a locally compiled file.
         let hfModelURL = URL(string: "https://huggingface.co/mlboydaisuke/LaMa-CoreML/resolve/main/LaMa.mlpackage/Data/com.apple.CoreML/model.mlmodel")
-        let downloadedModel: CoreMLHandwritingRemovalModel?
-        do {
-            downloadedModel = CoreMLHandwritingRemovalModel(model: try MLModel(contentsOf: hfModelURL!))
-        } catch {
-            downloadedModel = CoreMLHandwritingRemovalModel(model: try MLModel(contentsOf: compiledFileURL))
+
+        let candidates: [URL] = [
+            hfModelURL ?? destination,
+            compiledFileURL,
+            destination,
+        ]
+
+        var lastError: Error?
+        var resolvedModel: CoreMLHandwritingRemovalModel?
+        for candidate in candidates {
+            do {
+                let candidateModel = CoreMLHandwritingRemovalModel(model: try MLModel(contentsOf: candidate))
+                resolvedModel = candidateModel
+                break
+            } catch {
+                lastError = error
+            }
         }
-        if let downloadedModel = downloadedModel {
-            self.model = downloadedModel
+        if let resolvedModel = resolvedModel {
+            self.model = resolvedModel
+            downloadedModelURL = destination
+            return destination
         }
-        downloadedModelURL = destination
-        return destination
+        throw lastError ?? InkRemovalError.modelDidNotReturnAnOutput
     }
 
     @available(macOS 15.0, *)
