@@ -25,6 +25,18 @@ public final class EraserStore: ObservableObject {
         self.model = nil
     }
 
+    private func logError(_ message: String) {
+        let logsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
+        let logURL = logsDirectory.appendingPathComponent("handwriting-eraser-errors.log")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let entry = "[\(formatter.string(from: Date()))] \(message)\n"
+        if let data = entry.data(using: .utf8) {
+            try? data.write(to: logURL)
+        }
+    }
+
     @available(macOS 15.0, *)
     private static func makeDefaultModel() -> HandwritingRemovalModel? {
         guard let url = Bundle.main.url(forResource: "HandwritingRemover", withExtension: "mlmodel") else { return nil }
@@ -49,6 +61,7 @@ public final class EraserStore: ObservableObject {
             cleanedDocumentURL = nil
         } catch {
             errorMessage = "Failed to render PDF pages: \(error.localizedDescription)"
+            logError("PDF page rendering failed: \(error.localizedDescription)")
         }
     }
 
@@ -107,6 +120,7 @@ public final class EraserStore: ObservableObject {
         }
         let attemptedPaths = candidates.map { $0.path }.joined(separator: ", ")
         let failureMessage = "Local handwriting model load failed for paths: \(attemptedPaths). Error: \(String(describing: lastError))"
+        logError(failureMessage)
         throw NSError(domain: "HandwritingEraser", code: 1, userInfo: [NSLocalizedDescriptionKey: failureMessage])
     }
 
