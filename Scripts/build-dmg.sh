@@ -27,8 +27,8 @@ app="$stage/Handwriting Eraser.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 lipo -create "$workspace/HandwritingEraser-arm64" "$workspace/HandwritingEraser-x86_64" \
     -output "$app/Contents/MacOS/HandwritingEraser"
-lipo -verify_arch arm64 "$app/Contents/MacOS/HandwritingEraser"
-lipo -verify_arch x86_64 "$app/Contents/MacOS/HandwritingEraser"
+lipo "$app/Contents/MacOS/HandwritingEraser" -verify_arch arm64
+lipo "$app/Contents/MacOS/HandwritingEraser" -verify_arch x86_64
 chmod 755 "$app/Contents/MacOS/HandwritingEraser"
 
 # All current non-system dependencies are statically linked. Refuse to ship an

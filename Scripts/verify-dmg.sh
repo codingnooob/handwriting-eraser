@@ -30,8 +30,8 @@ binary="$app/Contents/MacOS/HandwritingEraser"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" = "$version" ]
 [ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = "15.0" ]
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" = "HandwritingEraser" ]
-lipo -verify_arch arm64 "$binary"
-lipo -verify_arch x86_64 "$binary"
+lipo "$binary" -verify_arch arm64
+lipo "$binary" -verify_arch x86_64
 codesign --verify --deep --strict --verbose=2 "$app"
 if otool -L "$binary" | grep -Eq '@rpath/|@loader_path/|@executable_path/'; then
     echo "Unbundled dynamic dependency found in the app." >&2
