@@ -81,8 +81,10 @@ public final class EraserStore: ObservableObject {
         let destination = directory.appendingPathComponent("HandwritingRemover-\(Int(Date().timeIntervalSince1970)).mlmodel")
         try data.write(to: destination)
 
-        let compiledFileURL = destination.appendingPathExtension("mlmodelc")
-        try data.write(to: compiledFileURL)
+        let compiledDirectory = destination.deletingLastPathComponent().appendingPathComponent(destination.lastPathComponent)
+        try FileManager.default.createDirectory(at: compiledDirectory, withIntermediateDirectories: true)
+        let compiledCoreDataURL = compiledDirectory.appendingPathComponent("coremldata.bin")
+        try data.write(to: compiledCoreDataURL)
 
         // Next attempt: load the model directly from the Hugging Face resolved
         // artifact URL instead of going through a locally compiled file.
@@ -90,7 +92,7 @@ public final class EraserStore: ObservableObject {
 
         let candidates: [URL] = [
             hfModelURL ?? destination,
-            compiledFileURL,
+            compiledDirectory,
             destination,
         ]
 
