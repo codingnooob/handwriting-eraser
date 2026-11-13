@@ -1,0 +1,121 @@
+name: Test and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      - name: Test release automation
+        run: python3 -m unittest discover -s Tests/ReleaseAutomationTests -v
+      - name: Download and verify inference fixture model
+        shell: bash
+        run: |
+          model="$RUNNER_TEMP/handwriting-detector.onnx"
+          curl --fail --location --retry 3 --output "$model" \
+            'https://huggingface.co/guoguo27/handwriting-segmenter/resolve/5b35de75b65da89fddc62e177b002f35b3b1f620/finetuned_e.onnx'
+          echo "e396488615dff875476934b2d43c94ecc1d1545ad608e67be79bf8ef9d0b0087  $model" | shasum -a 256 -c -
+          echo "HANDWRITING_ERASER_DETECTOR_MODEL=$model" >> "$GITHUB_ENV"
+          echo 'HANDWRITING_ERASER_INTEGRATION=1' >> "$GITHUB_ENV"
+      - name: Build and run unit, installation, and real inference tests
+        run: |
+          swift build
+          Scripts/test.sh
+
+  release:
+    name: Package and publish
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.repository }}-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Select Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      - name: Plan version from commits since the last published release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          latest=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --exclude-drafts --exclude-pre-releases \
+            --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')
+          python3 Scripts/release_version.py --last-tag "$latest" --head "$GITHUB_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Configure optional Apple signing
+        if: steps.plan.outputs.should_release == 'true'
+        id: signing
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: Scripts/configure-signing.sh
+      - name: Build universal DMG
+        if: steps.plan.outputs.should_release == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+          SIGNING_IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: Scripts/build-dmg.sh "$RELEASE_VERSION" dist
+      - name: Notarize and staple DMG
+        if: steps.plan.outputs.should_release == 'true' && steps.signing.outputs.notarize == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: Scripts/notarize-dmg.sh "dist/HandwritingEraser-$RELEASE_VERSION-macOS-universal.dmg"
+      - name: Verify DMG and create checksum
+        if: steps.plan.outputs.should_release == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          name="HandwritingEraser-$RELEASE_VERSION-macOS-universal.dmg"
+          Scripts/verify-dmg.sh "dist/$name" "$RELEASE_VERSION"
+          (cd dist && shasum -a 256 "$name" > "$name.sha256" && shasum -a 256 -c "$name.sha256")
+      - name: Publish GitHub release
+        if: steps.plan.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+          NOTARIZED: ${{ steps.signing.outputs.notarize }}
+        run: |
+          name="HandwritingEraser-$RELEASE_VERSION-macOS-universal.dmg"
+          if [ "$NOTARIZED" = true ]; then
+            notes=Packaging/RELEASE_NOTES_NOTARIZED.md
+          else
+            notes=Packaging/RELEASE_NOTES_UNNOTARIZED.md
+          fi
+          Scripts/publish-release.sh "$RELEASE_TAG" "dist/$name" "dist/$name.sha256" "$notes"
+      - name: Remove temporary signing keychain
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/handwriting-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/handwriting-signing.keychain-db"
+          fi

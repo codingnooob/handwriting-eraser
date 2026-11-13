@@ -3,56 +3,92 @@ import Combine
 import AppKit
 import PDFKit
 import CoreGraphics
-import CoreML
 import HandwritingEraserKit
 
+@available(macOS 15.0, *)
 @MainActor
 public final class EraserStore: ObservableObject {
+
+    private let modelDirectory: URL
 
     @Published public var documentURL: URL?
     @Published public var pageImages: [NSImage] = []
     @Published public var cleanedPages: [NSImage] = []
+    @Published public var showCleaned = true
     @Published public var isProcessing = false
+    @Published public var isDownloadingModel = false
+    @Published public var isLoadingModel = false
+    @Published public var processingStatus: String?
     @Published public var errorMessage: String?
+    @Published public var modelStatus: String?
     @Published public var cleanedDocumentURL: URL?
     @Published public var model: HandwritingRemovalModel?
-    @Published public var modelDownloadURLString: String = "https://huggingface.co/mlboydaisuke/LaMa-CoreML/resolve/main/LaMa.mlpackage/Data/com.apple.CoreML/model.mlmodel"
     @Published public var downloadedModelURL: URL?
 
     @Published public var isImporterPresented = false
 
-    public init() {
-        self.model = nil
-    }
-
-    private func logError(_ message: String) {
-        let logsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
-        let logURL = logsDirectory.appendingPathComponent("handwriting-eraser-errors.log")
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-        let entry = "[\(formatter.string(from: Date()))] \(message)\n"
-        if let data = entry.data(using: .utf8) {
-            try? data.write(to: logURL)
+    public init(modelDirectory: URL = HandwritingDetectorInstaller.defaultDirectory()) {
+        self.modelDirectory = modelDirectory
+        let installer = HandwritingDetectorInstaller(directory: modelDirectory)
+        if FileManager.default.fileExists(atPath: installer.installedModelURL.path) {
+            isLoadingModel = true
+            modelStatus = "Loading the local handwriting detector…"
+            Task { await restoreCachedModel(installer) }
         }
     }
 
-    @available(macOS 15.0, *)
-    private static func makeDefaultModel() -> HandwritingRemovalModel? {
-        guard let url = Bundle.main.url(forResource: "HandwritingRemover", withExtension: "mlmodel") else { return nil }
-        return try? CoreMLHandwritingRemovalModel.remover(contentsOf: url)
+    private func restoreCachedModel(_ installer: HandwritingDetectorInstaller) async {
+        defer { isLoadingModel = false }
+        do {
+            let load = Task.detached(priority: .userInitiated) {
+                let url = try installer.verifyInstalledModel()
+                return (url, try ONNXHandwritingRemovalModel(contentsOf: url))
+            }
+            let (url, loadedModel) = try await load.value
+            model = loadedModel
+            downloadedModelURL = url
+            modelStatus = "Local handwriting detector installed."
+        } catch {
+            modelStatus = "Could not load the cached detector. Download it again."
+            logError("Could not load the cached handwriting detector: \(String(describing: error))")
+        }
+    }
+
+    private func logError(_ message: String) {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let logURL = directory.appendingPathComponent("handwriting-eraser-errors.log")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let entry = "[\(formatter.string(from: Date()))] \(message)\n"
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: logURL.path),
+               !FileManager.default.createFile(atPath: logURL.path, contents: nil) {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            let handle = try FileHandle(forWritingTo: logURL)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(entry.utf8))
+        } catch {
+            NSLog("Could not write diagnostics to %@: %@", logURL.path, error.localizedDescription)
+        }
     }
 
     public func loadDocument(at url: URL) {
-        // Load and render the pages of the imported PDF.
-        guard let document = PDFDocument(url: url) else {
-            errorMessage = "Could not open the selected document as a PDF."
+        errorMessage = nil
+        // SwiftUI's file importer may return a security-scoped URL in a sandbox.
+        // All pages are rendered before access is released.
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let document = PDFDocument(url: url), !document.isLocked, document.pageCount > 0 else {
+            errorMessage = "Could not open the PDF. It may be empty, damaged, or password-protected."
             return
         }
         do {
             var images: [NSImage] = []
             for index in 0..<document.pageCount {
-                guard let page = document.page(at: index) else { continue }
+                guard let page = document.page(at: index) else { throw InkRemovalError.pageRenderingFailed }
                 images.append(try renderPage(page))
             }
             pageImages = images
@@ -61,102 +97,87 @@ public final class EraserStore: ObservableObject {
             cleanedDocumentURL = nil
         } catch {
             errorMessage = "Failed to render PDF pages: \(error.localizedDescription)"
-            logError("PDF page rendering failed: \(error.localizedDescription)")
+            logError("PDF page rendering failed: \(String(describing: error))")
         }
     }
 
     public func renderPage(_ page: PDFPage) throws -> NSImage {
-        let source: NSImage = page.thumbnail(of: CGSize(width: 612, height: 792), for: .mediaBox)
-        return source
+        try PDFCleaningService.renderPage(page)
+    }
+
+    public func reportImportError(_ error: Error) {
+        errorMessage = "Could not import the PDF: \(error.localizedDescription)"
+        logError("PDF import failed: \(String(describing: error))")
+    }
+
+    public func reportProcessingError(_ error: Error) {
+        errorMessage = "Handwriting removal failed: \(error.localizedDescription)"
+        logError("Handwriting removal or export failed: \(String(describing: error))")
     }
 
     @available(macOS 15.0, *)
-    public func downloadModel(from url: URL) async throws -> URL {
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-            throw URLError(.badServerResponse)
-        }
+    public func downloadModel() async throws -> URL {
+        guard !isDownloadingModel && !isLoadingModel else { throw InkRemovalError.modelDownloadInProgress }
+        isDownloadingModel = true
+        errorMessage = nil
+        modelStatus = nil
+        defer { isDownloadingModel = false }
 
-        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let modelEpoch = Int(Date().timeIntervalSince1970)
-        let modelDirectory = directory.appendingPathComponent("HandwritingEraserModels").appendingPathComponent("HandwritingRemover-\(modelEpoch)")
-        try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
-        let destination = modelDirectory.appendingPathComponent("HandwritingRemover-\(modelEpoch).mlmodel")
-        try data.write(to: destination)
-
-        let weightsURL = URL(string: "https://huggingface.co/mlboydaisuke/LaMa-CoreML/resolve/main/LaMa.mlpackage/Data/com.apple.CoreML/weights/weight.bin")
-        if let weightsURL = weightsURL {
-            let (weightsData, weightsResponse) = try await URLSession.shared.data(from: weightsURL)
-            if let httpResponse = weightsResponse as? HTTPURLResponse, httpResponse.statusCode != 200 {
-                throw URLError(.badServerResponse)
+        do {
+            let installer = HandwritingDetectorInstaller(directory: modelDirectory)
+            let installation = Task.detached(priority: .userInitiated) {
+                let url = try await installer.install()
+                return (url, try ONNXHandwritingRemovalModel(contentsOf: url))
             }
-            let weightsFileURL = modelDirectory.appendingPathComponent("weights").appendingPathComponent("weight.bin")
-            try weightsData.write(to: weightsFileURL)
-        }
-
-        let compiledDirectory = destination.deletingLastPathComponent().appendingPathComponent(destination.lastPathComponent)
-        try FileManager.default.createDirectory(at: compiledDirectory, withIntermediateDirectories: true)
-        let compiledCoreDataURL = compiledDirectory.appendingPathComponent("coremldata.bin")
-        try data.write(to: compiledCoreDataURL)
-
-        // Next attempt: load the model directly from the Hugging Face resolved
-        // artifact URL instead of going through a locally compiled file.
-        let hfModelURL = URL(string: "https://huggingface.co/mlboydaisuke/LaMa-CoreML/resolve/main/LaMa.mlpackage/Data/com.apple.CoreML/model.mlmodel")
-
-        let candidates: [URL] = [
-            hfModelURL ?? destination,
-            compiledDirectory,
-            destination,
-        ]
-
-        var lastError: Error?
-        var resolvedModel: CoreMLHandwritingRemovalModel?
-        var candidateErrors: [String] = []
-        for candidate in candidates {
-            do {
-                let candidateModel = CoreMLHandwritingRemovalModel(model: try MLModel(contentsOf: candidate))
-                resolvedModel = candidateModel
-                break
-            } catch {
-                lastError = error
-                candidateErrors.append("\(candidate.path): \(String(describing: error))")
+            let (url, loadedModel) = try await withTaskCancellationHandler {
+                try await installation.value
+            } onCancel: {
+                installation.cancel()
             }
+            self.model = loadedModel
+            downloadedModelURL = url
+            modelStatus = "Local handwriting detector installed."
+            return url
+        } catch {
+            logError("Local model installation failed: \(String(describing: error))")
+            throw error
         }
-        if let resolvedModel = resolvedModel {
-            self.model = resolvedModel
-            downloadedModelURL = destination
-            return destination
-        }
-        let attemptedPaths = candidates.map { $0.path }.joined(separator: ", ")
-        let failureMessage = "Local handwriting model load failed for paths: \(attemptedPaths). Errors: \(candidateErrors.joined(separator: " | ")). Last error: \(String(describing: lastError))"
-        logError(failureMessage)
-        throw NSError(domain: "HandwritingEraser", code: 1, userInfo: [NSLocalizedDescriptionKey: failureMessage])
     }
 
     @available(macOS 15.0, *)
     public func cleanImages() async throws -> [NSImage] {
-        var resolvedModel = model
-        if resolvedModel == nil {
-            resolvedModel = Self.makeDefaultModel()
-        }
-        guard let model = resolvedModel else {
-            throw InkRemovalError.modelDidNotReturnAnOutput
+        guard let model else {
+            throw InkRemovalError.modelUnavailable
         }
         guard !pageImages.isEmpty else {
             throw InkRemovalError.pageRenderingFailed
         }
 
+        guard !isProcessing else { throw InkRemovalError.processingInProgress }
         isProcessing = true
-        defer { isProcessing = false }
+        errorMessage = nil
+        processingStatus = nil
+        // Keep the last successful preview and output if a retry fails.
+        defer {
+            isProcessing = false
+            processingStatus = nil
+        }
 
-        let service = PDFCleaningService(model: model)
-        return try await service.clean(images: pageImages)
+        do {
+            let service = PDFCleaningService(model: model)
+            return try await service.clean(images: pageImages) { page, total in
+                self.processingStatus = "Removing handwriting from page \(page) of \(total)…"
+            }
+        } catch {
+            logError("Handwriting removal failed: \(String(describing: error))")
+            throw error
+        }
     }
 
     @available(macOS 15.0, *)
     public func exportCleaned(images: [NSImage]) throws -> URL {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = directory.appendingPathComponent("handwriting-eraser-\(Int(Date().timeIntervalSince1970)).pdf")
+        let url = directory.appendingPathComponent("handwriting-eraser-\(UUID().uuidString).pdf")
         _ = try PDFCleaningService.writeCleanedDocument(pages: images, to: url)
         cleanedDocumentURL = url
         return url

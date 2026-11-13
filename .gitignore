@@ -1,4 +1,8 @@
 .build/
 DerivedData/
+dist/
+__pycache__/
+*.py[cod]
+.DS_Store
 *.xcodeproj
 *.xcworkspace

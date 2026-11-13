@@ -1,0 +1,15 @@
+Handwriting Eraser — Installation
+
+1. Drag Handwriting Eraser.app into Applications.
+2. Launch Handwriting Eraser from Applications.
+3. On first use, choose Download Local AI Model (about 176 MB).
+
+macOS 15 or later is required. The universal app supports Apple silicon and Intel.
+
+Some releases are not notarized by Apple. If macOS blocks the app, go to
+System Settings > Privacy & Security and choose Open Anyway for Handwriting
+Eraser. Only do this if you trust the source and have checked the release's
+SHA-256 checksum. A signed and notarized release does not need this step.
+
+PDF pages stay on your Mac. Always review output: handwriting can remain and
+printed content can be erased. Exported PDFs are rasterized.
