@@ -90,6 +90,7 @@ public final class EraserStore: ObservableObject {
             compiledFileURL = compiledModelFileURL
         } catch {
             compiledFileURL = nil
+            logError("MLModel.compileModel failed for \(destination.path): \(String(describing: error))")
         }
 
         // Next attempt: load the model directly from the Hugging Face resolved
