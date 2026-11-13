@@ -78,7 +78,10 @@ public final class EraserStore: ObservableObject {
         }
 
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let destination = directory.appendingPathComponent("HandwritingRemover-\(Int(Date().timeIntervalSince1970)).mlmodel")
+        let modelEpoch = Int(Date().timeIntervalSince1970)
+        let modelDirectory = directory.appendingPathComponent("HandwritingEraserModels").appendingPathComponent("HandwritingRemover-\(modelEpoch)")
+        try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
+        let destination = modelDirectory.appendingPathComponent("HandwritingRemover-\(modelEpoch).mlmodel")
         try data.write(to: destination)
 
         let weightsURL = URL(string: "https://huggingface.co/mlboydaisuke/LaMa-CoreML/resolve/main/LaMa.mlpackage/Data/com.apple.CoreML/weights/weight.bin")
@@ -87,8 +90,7 @@ public final class EraserStore: ObservableObject {
             if let httpResponse = weightsResponse as? HTTPURLResponse, httpResponse.statusCode != 200 {
                 throw URLError(.badServerResponse)
             }
-            let weightsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let weightsFileURL = weightsDirectory.appendingPathComponent("weights").appendingPathComponent("weight.bin")
+            let weightsFileURL = modelDirectory.appendingPathComponent("weights").appendingPathComponent("weight.bin")
             try weightsData.write(to: weightsFileURL)
         }
 
