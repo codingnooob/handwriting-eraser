@@ -150,7 +150,7 @@ public final class EraserStore: ObservableObject {
     public func exportCleaned(images: [NSImage]) throws -> URL {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = directory.appendingPathComponent("handwriting-eraser-\(Int(Date().timeIntervalSince1970)).pdf")
-        try PDFCleaningService.writeCleanedDocument(pages: images, to: url)
+        _ = try PDFCleaningService.writeCleanedDocument(pages: images, to: url)
         cleanedDocumentURL = url
         return url
     }

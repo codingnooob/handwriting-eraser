@@ -12,7 +12,7 @@ struct ContentView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let documentURL = store.documentURL {
+                    if store.documentURL != nil {
                         // A document is loaded: show its pages and clean them.
                         if store.pageImages.isEmpty {
                             Text("No pages could be rendered from the document.")

@@ -33,10 +33,10 @@ public final class PDFCleaningService {
     /// Writes a cleaned document containing the given page images.
     public static func writeCleanedDocument(pages: [NSImage], to url: URL) throws -> Bool {
         let document = PDFDocument()
-        for (index, image) in pages.enumerated() {
+        for (index, _) in pages.enumerated() {
             let page = PDFPage()
             document.insert(page, at: index)
         }
-        return try document.write(toFile: url.path)
+        return document.write(toFile: url.path)
     }
 }
