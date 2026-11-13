@@ -106,6 +106,7 @@ public final class EraserStore: ObservableObject {
 
         var lastError: Error?
         var resolvedModel: CoreMLHandwritingRemovalModel?
+        var candidateErrors: [String] = []
         for candidate in candidates {
             do {
                 let candidateModel = CoreMLHandwritingRemovalModel(model: try MLModel(contentsOf: candidate))
@@ -113,6 +114,7 @@ public final class EraserStore: ObservableObject {
                 break
             } catch {
                 lastError = error
+                candidateErrors.append("\(candidate.path): \(String(describing: error))")
             }
         }
         if let resolvedModel = resolvedModel {
@@ -121,7 +123,7 @@ public final class EraserStore: ObservableObject {
             return destination
         }
         let attemptedPaths = candidates.map { $0.path }.joined(separator: ", ")
-        let failureMessage = "Local handwriting model load failed for paths: \(attemptedPaths). Error: \(String(describing: lastError))"
+        let failureMessage = "Local handwriting model load failed for paths: \(attemptedPaths). Errors: \(candidateErrors.joined(separator: " | ")). Last error: \(String(describing: lastError))"
         logError(failureMessage)
         throw NSError(domain: "HandwritingEraser", code: 1, userInfo: [NSLocalizedDescriptionKey: failureMessage])
     }
