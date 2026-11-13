@@ -81,17 +81,8 @@ public final class EraserStore: ObservableObject {
         let destination = directory.appendingPathComponent("HandwritingRemover-\(Int(Date().timeIntervalSince1970)).mlmodel")
         try data.write(to: destination)
 
-        var compiledFileURL: URL? = nil
-        do {
-            let compiledURL = try await MLModel.compileModel(at: destination)
-            let compiledData = try Data(contentsOf: compiledURL)
-            let compiledModelFileURL = destination.appendingPathExtension("mlmodelc")
-            try compiledData.write(to: compiledModelFileURL)
-            compiledFileURL = compiledModelFileURL
-        } catch {
-            compiledFileURL = nil
-            logError("MLModel.compileModel failed for \(destination.path): \(String(describing: error))")
-        }
+        let compiledFileURL = destination.appendingPathExtension("mlmodelc")
+        try data.write(to: compiledFileURL)
 
         // Next attempt: load the model directly from the Hugging Face resolved
         // artifact URL instead of going through a locally compiled file.
@@ -99,7 +90,7 @@ public final class EraserStore: ObservableObject {
 
         let candidates: [URL] = [
             hfModelURL ?? destination,
-            compiledFileURL ?? destination,
+            compiledFileURL,
             destination,
         ]
 
