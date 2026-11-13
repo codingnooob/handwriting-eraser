@@ -55,7 +55,7 @@ struct HandwritingInferenceTests {
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["HANDWRITING_ERASER_SAMPLE_IMAGE"] != nil,
                    "Set HANDWRITING_ERASER_SAMPLE_IMAGE and HANDWRITING_ERASER_DETECTOR_MODEL to run an actual sample"))
-    func removesDetectedPixelsFromSample() async throws {
+    @MainActor func removesDetectedPixelsFromSample() async throws {
         let environment = ProcessInfo.processInfo.environment
         let inputPath = try #require(environment["HANDWRITING_ERASER_SAMPLE_IMAGE"])
         let modelPath = try #require(environment["HANDWRITING_ERASER_DETECTOR_MODEL"])

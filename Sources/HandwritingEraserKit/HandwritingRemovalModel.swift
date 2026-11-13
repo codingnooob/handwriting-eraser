@@ -9,6 +9,7 @@ import AppKit
 public protocol HandwritingRemovalModel: AnyObject, Sendable {
 
     /// Returns a new image with the handwriting contained in `source`
-    /// removed. The source image is never mutated.
-    func removeHandwriting(from source: NSImage) async throws -> NSImage
+    /// removed. The source image is never mutated. AppKit image conversion
+    /// stays on the main actor; implementations should move inference off it.
+    @MainActor func removeHandwriting(from source: NSImage) async throws -> NSImage
 }

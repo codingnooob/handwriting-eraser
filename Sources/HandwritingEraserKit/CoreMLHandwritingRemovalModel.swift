@@ -21,7 +21,7 @@ public final class CoreMLHandwritingRemovalModel: HandwritingRemovalModel {
     }
 
     @available(macOS 15.0, *)
-    public func removeHandwriting(from source: NSImage) async throws -> NSImage {
+    @MainActor public func removeHandwriting(from source: NSImage) async throws -> NSImage {
         // Returning the source unchanged (or supplying an all-zero tensor)
         // would falsely claim that handwriting was removed. A handwriting
         // detector and mask-to-image pipeline are still required.

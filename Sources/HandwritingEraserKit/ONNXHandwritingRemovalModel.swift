@@ -11,7 +11,7 @@ public final class ONNXHandwritingRemovalModel: HandwritingRemovalModel, Sendabl
         worker = try HandwritingDetectorWorker(modelURL: url)
     }
 
-    public func removeHandwriting(from source: NSImage) async throws -> NSImage {
+    @MainActor public func removeHandwriting(from source: NSImage) async throws -> NSImage {
         guard let image = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             throw InkRemovalError.pageRenderingFailed
         }
