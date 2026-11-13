@@ -85,11 +85,9 @@ public final class EraserStore: ObservableObject {
         do {
             let compiledURL = try await MLModel.compileModel(at: destination)
             let compiledData = try Data(contentsOf: compiledURL)
-            let compiledDirectory = destination.deletingLastPathComponent().appendingPathComponent(destination.lastPathComponent)
-            try FileManager.default.createDirectory(at: compiledDirectory, withIntermediateDirectories: true)
-            let compiledCoreDataURL = destination.appendingPathComponent("coremldata.bin")
-            try compiledData.write(to: compiledCoreDataURL)
-            compiledFileURL = compiledCoreDataURL
+            let compiledModelFileURL = destination.appendingPathExtension("mlmodelc")
+            try compiledData.write(to: compiledModelFileURL)
+            compiledFileURL = compiledModelFileURL
         } catch {
             compiledFileURL = nil
         }
